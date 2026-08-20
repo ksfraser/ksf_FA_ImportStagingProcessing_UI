@@ -213,9 +213,8 @@ class ksf_import_square_payments_model extends generic_fa_interface_model {
 		$this->table_interface->set( "table_details", $table_details );
 		$this->table_interface->set( "fields_array", $fields_array );
 */
-		$tt = $this->table_interface;
-		$tt->table_details = $table_details;
-		$tt->fields_array = $fields_array;
+		$this->set( "fields_array", $fields_array );
+		$this->set( "table_details", $table_details );
 		//var_dump( $this->table_interface );
 
 

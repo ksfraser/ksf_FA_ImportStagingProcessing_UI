@@ -12,7 +12,7 @@ include_once( __DIR__ . "/includes/parsers.inc");
 
 require_once( "class.ksf_import_square_transactions.php" );
 require_once( "class.ksf_import_square_items.php" );
-require_once( "class.ksf_import_square_sale.php" );
+require_once( "class.ksf_import_square_sales_model.php" );
 
 /*********
 *	TODO

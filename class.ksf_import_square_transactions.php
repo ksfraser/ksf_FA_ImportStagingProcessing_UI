@@ -326,8 +326,8 @@ class ksf_import_square_transactions_model extends generic_fa_interface_model {
 		{
 			display_notification( __FILE__ . "::" . __LINE__ . "::" . print_r( $this->fields_array , true ) );
 		}
-		$this->table_interface->set( "fields_array", $fields_array );
-		$this->table_interface->table_details = $table_details;
+		$this->set( "fields_array", $fields_array );
+		$this->set( "table_details", $table_details );
 	}
         /*****************************************************************//**
         * Set the field if possible

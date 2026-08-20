@@ -239,7 +239,7 @@ class ksf_import_square extends generic_fa_interface
 			require_once( '../ksf_modules_common/class.parse_uploaded_files.php' );
 			require_once( "class.ksf_import_square_transactions.php" );
 			require_once( "class.ksf_import_square_items.php" );
-			require_once( "class.ksf_import_square_sale.php" );
+			require_once( "class.ksf_import_square_sales_model.php" );
 
         		$puf = new parse_uploaded_files( $this->gui );
         		//We have transaction_id in both Square CSV file types.
