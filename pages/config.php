@@ -24,6 +24,11 @@ $config = new ModuleConfig(
     ]
 );
 
+$config
+    ->addDDLRenderer('customer_list',    'customer_list_row')
+    ->addDDLRenderer('locations_list',   'locations_list_row')
+    ->addDDLRenderer('dimensions_list',  'dimensions_list_row');
+
 $config->load();
 $config->handlePost('update_config');
 
