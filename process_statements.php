@@ -19,7 +19,7 @@ if ($use_popup_windows)
 if ($use_date_picker)
 	$js .= get_js_date_picker();
 
-page(_($help_context = "Process Square Transactions"), @$_GET['popup'], false, "", $js);
+page(_($help_context = "Process Transactions"), @$_GET['popup'], false, "", $js);
 
 $optypes = array(
 );
@@ -699,8 +699,10 @@ if (1) {
 	table_header(array("Transaction Details", "Operation/Status"));
 
 	//load data
+	$row_count = 0;
 	while($myrow = db_fetch($res)) 
 	{
+		$row_count++;
 		//display_notification( __FILE__ . "::" . __LINE__ );
 		$trz_code = $myrow['transactionCode'];
 		if( !isset( $trzs[$trz_code] ) ) 
@@ -1171,6 +1173,9 @@ if (1) {
 		end_table();
 		echo "</td>";
 		end_row();
+		}
+		if ($row_count == 0) {
+			label_row("", "<i>No transactions found for the selected date range and status.</i>");
 		}
 		end_table();
 	}

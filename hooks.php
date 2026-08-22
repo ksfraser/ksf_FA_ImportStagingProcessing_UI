@@ -18,17 +18,10 @@ class hooks_ksf_FA_ImportStagingProcessing_UI extends hooks
             case 'orders':
                 $app->add_rapp_function(
                     3,
-                    _('Import Transactions'),
-                    $path_to_root . '/modules/' . $this->module_name . '/import_statements.php',
+                    _('ISU Configuration'),
+                    $path_to_root . '/modules/' . $this->module_name . '/pages/config.php',
                     'SA_' . $this->module_name,
-                    MENU_MAINTENANCE
-                );
-                $app->add_rapp_function(
-                    3,
-                    _('Process Staging'),
-                    $path_to_root . '/modules/' . $this->module_name . '/process_statements.php',
-                    'SA_' . $this->module_name,
-                    MENU_IMPORT
+                    MENU_CONFIG
                 );
                 break;
         }
