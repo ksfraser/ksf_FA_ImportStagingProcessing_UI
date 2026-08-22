@@ -16,12 +16,6 @@ class hooks_ksf_FA_ImportStagingProcessing_UI extends hooks
         switch ($app->id) {
             case 'GL':
             case 'orders':
-                $app->add_lapp_function(
-                    3,
-                    _('Staging Import'),
-                    $path_to_root . '/modules/' . $this->module_name . '/ksf_import_square.php',
-                    'SA_' . $this->module_name
-                );
                 $app->add_rapp_function(
                     3,
                     _('Import Transactions'),
@@ -160,7 +154,11 @@ class hooks_ksf_FA_ImportStagingProcessing_UI extends hooks
     /**
      * Handle a stageTransaction request from an importing module.
      *
+     * Builds a StagingTransactionDTO from the payload, stages via DTO method,
+     * returns StagingResult as array in $data['result'].
+     *
      * @since 2.0.0
+     * @since 2.1.0 Uses DTO-based staging
      */
     private function handleStageTransaction(array &$data, array $opts): ?array
     {
@@ -171,20 +169,22 @@ class hooks_ksf_FA_ImportStagingProcessing_UI extends hooks
             return null;
         }
 
+        $dto = \Ksfraser\ImportStaging\DTO\StagingTransactionDTO::fromArray($transaction);
         $service = $this->getStagingService();
-        $result = $service->stageTransaction($transaction);
+        $result = $service->stageTransactionDTO($dto);
 
-        $data['success'] = $result['success'];
-        $data['result'] = $result;
-        $data['error'] = $result['error'] ?? '';
+        $data['success'] = $result->isOk();
+        $data['result'] = $result->toArray();
+        $data['error'] = $result->getError() ? $result->getError()->getMessage() : '';
 
-        return $result;
+        return $data['result'];
     }
 
     /**
      * Handle a stageItem request from an importing module.
      *
      * @since 2.0.0
+     * @since 2.1.0 Uses DTO-based staging
      */
     private function handleStageItem(array &$data, array $opts): ?array
     {
@@ -195,20 +195,22 @@ class hooks_ksf_FA_ImportStagingProcessing_UI extends hooks
             return null;
         }
 
+        $dto = \Ksfraser\ImportStaging\DTO\StagingItemDTO::fromArray($item);
         $service = $this->getStagingService();
-        $result = $service->stageItem($item);
+        $result = $service->stageItemDTO($dto);
 
-        $data['success'] = $result['success'];
-        $data['result'] = $result;
-        $data['error'] = $result['error'] ?? '';
+        $data['success'] = $result->isOk();
+        $data['result'] = $result->toArray();
+        $data['error'] = $result->getError() ? $result->getError()->getMessage() : '';
 
-        return $result;
+        return $data['result'];
     }
 
     /**
      * Handle a stagePayment request from an importing module.
      *
      * @since 2.0.0
+     * @since 2.1.0 Uses DTO-based staging
      */
     private function handleStagePayment(array &$data, array $opts): ?array
     {
@@ -219,14 +221,15 @@ class hooks_ksf_FA_ImportStagingProcessing_UI extends hooks
             return null;
         }
 
+        $dto = \Ksfraser\ImportStaging\DTO\StagingPaymentDTO::fromArray($payment);
         $service = $this->getStagingService();
-        $result = $service->stagePayment($payment);
+        $result = $service->stagePaymentDTO($dto);
 
-        $data['success'] = $result['success'];
-        $data['result'] = $result;
-        $data['error'] = $result['error'] ?? '';
+        $data['success'] = $result->isOk();
+        $data['result'] = $result->toArray();
+        $data['error'] = $result->getError() ? $result->getError()->getMessage() : '';
 
-        return $result;
+        return $data['result'];
     }
 
     /**
