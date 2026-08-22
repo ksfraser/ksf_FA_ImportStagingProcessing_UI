@@ -163,84 +163,29 @@ class StagingService
         ));
     }
 
-    // =========================================================================
-    // Array-based API (legacy, kept for backward compat)
-    // =========================================================================
-
-    /**
-     * Stage a transaction (legacy array interface).
-     *
-     * @param array $data Transaction data (keys match ISU column names)
-     * @return array ['success' => bool, 'id' => int, 'error' => string]
-     * @since 2.0.0
-     */
-    public function stageTransaction(array $data): array
-    {
-        $dto = StagingTransactionDTO::fromArray($data);
-        $result = $this->stageTransactionDTO($dto);
-
-        return [
-            'success' => $result->isOk(),
-            'id'      => $result->getId(),
-            'error'   => $result->getError() ? $result->getError()->getMessage() : '',
-        ];
-    }
-
-    /**
-     * Stage a line item (legacy array interface).
-     *
-     * @param array $data Item data
-     * @return array ['success' => bool, 'id' => int, 'error' => string]
-     * @since 2.0.0
-     */
-    public function stageItem(array $data): array
-    {
-        $dto = StagingItemDTO::fromArray($data);
-        $result = $this->stageItemDTO($dto);
-
-        return [
-            'success' => $result->isOk(),
-            'id'      => $result->getId(),
-            'error'   => $result->getError() ? $result->getError()->getMessage() : '',
-        ];
-    }
-
-    /**
-     * Stage a payment match record (legacy array interface).
-     *
-     * @param array $data Payment data
-     * @return array ['success' => bool, 'id' => int, 'error' => string]
-     * @since 2.0.0
-     */
-    public function stagePayment(array $data): array
-    {
-        $dto = StagingPaymentDTO::fromArray($data);
-        $result = $this->stagePaymentDTO($dto);
-
-        return [
-            'success' => $result->isOk(),
-            'id'      => $result->getId(),
-            'error'   => $result->getError() ? $result->getError()->getMessage() : '',
-        ];
-    }
-
     /**
      * Update the status of a staged transaction.
      *
      * @param int $id Staging ID
      * @param string $status New status
      * @param array $extra Additional fields to update
-     * @return array ['success' => bool, 'error' => string]
-     * @since 2.0.0
+     * @return StagingResult
+     * @since 2.1.0
      */
-    public function updateStatus(int $id, string $status, array $extra = []): array
+    public function updateStatus(int $id, string $status, array $extra = []): StagingResult
     {
         if ($id <= 0 || $status === '') {
-            return ['success' => false, 'error' => 'Missing id or status'];
+            return StagingResult::error(new StagingError(
+                StagingError::VALIDATION_FAILED,
+                'Missing id or status'
+            ));
         }
 
         if (!function_exists('db_query')) {
-            return ['success' => false, 'error' => 'FA not available'];
+            return StagingResult::error(new StagingError(
+                StagingError::FA_NOT_AVAILABLE,
+                'FA database layer not available'
+            ));
         }
 
         $table = TB_PREF . 'ksf_import_square_transactions';
@@ -262,22 +207,13 @@ class StagingService
         $result = @db_query($sql);
 
         if ($result !== false) {
-            return ['success' => true, 'error' => ''];
+            return StagingResult::updated($id);
         }
 
-        return ['success' => false, 'error' => 'Update failed: ' . db_error()];
-    }
-
-    /**
-     * Check if a transaction is already staged.
-     *
-     * @param string $transactionId Source transaction ID
-     * @return bool
-     * @since 2.0.0
-     */
-    public function transactionExists(string $transactionId): bool
-    {
-        return $this->findExistingTransaction($transactionId) !== false;
+        return StagingResult::error(new StagingError(
+            StagingError::DB_ERROR,
+            'Update failed: ' . db_error()
+        ));
     }
 
     // =========================================================================
