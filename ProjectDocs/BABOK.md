@@ -14,7 +14,10 @@ This document captures the business analysis for the ksf_FA_ImportStagingProcess
 
 ### 1.2 Scope
 
-The module automates the import of Square POS transactions into FrontAccounting, replacing manual CSV data entry and providing a pipeline from raw Square data to posted ledger entries.
+The module provides a source-agnostic staging pipeline for importing
+financial transactions from Square POS, WooCommerce, and future sources.
+It handles CSV upload, API import, transaction staging, customer/vendor
+matching, GL mismatch detection, and processing into FA ledger entries.
 
 ---
 
@@ -43,11 +46,13 @@ The module automates the import of Square POS transactions into FrontAccounting,
 
 ### 3.2 Desired State (To-Be)
 
-- Automated CSV import with validation and staging
-- Optional Square API integration for real-time or scheduled pulls
-- Automatic duplicate detection using transaction IDs and counterparty models
+- Source-agnostic staging pipeline supporting multiple import sources
+- Config delegation: source modules own GL/bank/payment config; ISU owns matching window and defaults
+- Automated duplicate detection using transaction IDs and counterparty models
 - One-click processing of staged transactions into FA invoices, payments, and transfers
-- Full traceability from Square transaction_id to FA trans_no
+- GL mismatch detection during review: flags GL differences between staged and existing FA transactions
+- Three-way match scoring (source A + source B + native FA) with amount/date/customer weighting
+- Full traceability from source transaction_id to FA trans_no
 - Reduced manual data entry and reconciliation effort
 
 ### 3.3 Gap Analysis
@@ -56,9 +61,12 @@ The module automates the import of Square POS transactions into FrontAccounting,
 |-----|---------|--------|----------|
 | Data Entry | Manual CSV typing | Automated CSV parse + stage | CSV upload with parser models |
 | Duplicate Detection | None | Transaction ID + counterparty matching | Staging tables with existence checks |
-| API Access | Not available | Square API pull | API import controller |
-| Invoice Matching | Manual | Automated amount/date matching | `fa_debtor_trans_model::findMatchingInvoices()` |
-| Deposit Reconciliation | Manual bank statement review | Auto-matched deposits | Bank transfer creation from Square deposits |
+| API Access | Not available | Square API + Woo REST API pull | Source module API controllers |
+| Invoice Matching | Manual | Automated amount/date/customer scoring | Weighted match scoring with configurable tolerances |
+| GL Mismatch | Undetected | Advisory flag on review UI | Three-way GL comparison during match phase |
+| Config Management | Square-specific fields in ISU | Source modules own their config | Config delegation via integration_module |
+| Multi-Source | Square only | Square + Woo + future | Source-agnostic staging tables with source ID |
+| Deposit Reconciliation | Manual bank statement review | Auto-matched deposits | Bank transfer creation from staged deposits |
 
 ---
 
@@ -130,6 +138,49 @@ The module automates the import of Square POS transactions into FrontAccounting,
 
 ---
 
+### BR-ISU-005: Config Delegation Architecture
+
+**Statement**: The system SHALL delegate source-specific configuration
+(GL accounts, bank accounts, payment methods) to importing modules, while
+retaining only source-agnostic settings (matching window, rounding,
+defaults).
+
+**Rationale**: ISU is a generic staging backend. Owning Square-specific
+GL accounts or bank accounts violates SRP and creates coupling.
+Source modules know their own GL routing and should own that config.
+
+**Acceptance Criteria**:
+- ISU config table contains only source-agnostic fields
+- Importing modules register as `integration_module` for their config
+- ISU processing methods accept `$sourceConfig` array from calling module
+- ISU falls back to generic defaults when source config not provided
+
+**Related FRs**: FR-ISU-010
+
+---
+
+### BR-ISU-006: GL Mismatch Detection
+
+**Statement**: The system SHALL detect and flag GL account mismatches
+between staged transactions and existing FA transactions during the
+review/match phase.
+
+**Rationale**: When transactions are imported from multiple sources
+(Square, Woo) or already exist in FA via PaymentDestinations routing,
+GL accounts may differ. Detecting mismatches prevents incorrect
+reconciliation and provides visibility for dispute prevention.
+
+**Acceptance Criteria**:
+- Match candidates scored by amount, date, customer, and line items
+- GL accounts compared between staged source and matched FA record
+- Visual warning displayed on mismatched rows in review UI
+- Mismatch is advisory only — does not block processing
+- Configurable matching window (days_before/days_after) and tolerance (rounding_amount)
+
+**Related FRs**: FR-ISU-012
+
+---
+
 ## 5. Business Rules
 
 | Rule ID | Description |
@@ -141,6 +192,9 @@ The module automates the import of Square POS transactions into FrontAccounting,
 | BR-ISU-R005 | Bank transfers for Square deposits SHALL be from the configured Square bank account to the configured transfer destination bank account |
 | BR-ISU-R006 | All monetary values SHALL be sanitized to 2 decimal places before storage |
 | BR-ISU-R007 | The module SHALL use the `0_` company prefix for all tables |
+| BR-ISU-R008 | ISU config SHALL NOT contain source-specific fields (GL accounts, bank accounts, API tokens) |
+| BR-ISU-R009 | GL mismatch flags are advisory and SHALL NOT block transaction processing |
+| BR-ISU-R010 | Match scoring SHALL weight: amount (highest), date proximity, customer, line items |
 
 ---
 
@@ -159,10 +213,16 @@ The solution is a FrontAccounting 2.4 module following MVC patterns:
 ### 6.2 Data Flow
 
 ```
-Square CSV/API → Parser → Controller → Staging Tables → Process UI → FA Ledger
-                                                        ↓
-                                                   Match Tables
-                                            (payments, sales, bank_transfer)
+Source Module (Square/Woo)
+  ↓ hook_invoke staging request + sourceConfig
+ISU Staging Tables (source-agnostic)
+  ↓
+Review UI (match candidates, GL mismatch flags)
+  ↓ process with sourceConfig
+FA Ledger (invoices, payments, transfers)
+  ↓
+Match Tables (payments, sales, bank_transfer)
+  + GL Mismatch Flags (advisory warnings)
 ```
 
 ### 6.3 External Dependencies

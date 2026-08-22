@@ -26,18 +26,13 @@ class ksf_import_square extends generic_fa_interface
 	var $debug;
 	var $fields_array;
 	protected $default_customer;
-	protected $square_gl;
-	protected $xfer_to_gl;
-	protected $square_bank;
-	protected $xfer_to_bank;
-	protected $cash_gl;
-	protected $cash_bank;
 	protected $days_before;
 	protected $days_after;
 	protected $gui;	//!<object	This should probably be in generic_fa_interface
 	protected $customer_id;
 	protected $already_matched;	//!<array list of trans_no of matched transactions.  Needs to be be loaded and saved into SESSION on change!
-	protected $useCardAsBranch;
+	/** @var SourceConfig|null Source-specific config provided by importing module */
+	protected $sourceConfig;
 	protected $debtor_no;		//!<int the current debtor
 	protected $transaction_id;	//!<int
 	protected $deposit_id;		//!<int
@@ -49,10 +44,7 @@ class ksf_import_square extends generic_fa_interface
 	protected $default_location;	//!<int Which Inventory Location transactions are sold out of
 	protected $default_dimension1;	//!<int
 	protected $default_dimension2;	//!<int
-	protected $default_pricebook;	//!<int
-	protected $default_pay_card;	//!<int
-	protected $default_pay_cash;	//!<int
-	protected $allowSkuChange;	//!<bool should we allow SKU changes outside of Custom Amount?
+
 
 	function __construct( $pref_tablename )
 	{
@@ -63,7 +55,6 @@ class ksf_import_square extends generic_fa_interface
 		parent::__construct( null, null, null, null, $pref_tablename );
 		
 		$this->tmp_dir = "../../tmp";
-		$this->filename = "pricebook.csv";
 		//$this->set_var( 'vendor', "ksf_import_square" );
 		/*
 		$this->fields_array = array();
@@ -73,23 +64,12 @@ class ksf_import_square extends generic_fa_interface
 		$this->config_values[] = array( 'pref_name' => 'environment', 'label' => 'Environment (devel/accept/prod)' );
 		$this->config_values[] = array( 'pref_name' => 'debug', 'label' => 'Debug (0,1+)' );
 		$this->config_values[] = array( 'pref_name' => 'default_customer', 'label' => 'Default Customer for unspecified customers', 'type' => 'customer_list' );
-		$this->config_values[] = array( 'pref_name' => 'square_gl', 'label' => 'Square GL Account', 'type' => 'gl_accounts_list' );
-		$this->config_values[] = array( 'pref_name' => 'xfer_to_gl', 'label' => 'Transfer from Square <b>TO</b> GL Account', 'type' => 'gl_accounts_list' );
-		$this->config_values[] = array( 'pref_name' => 'cash_gl', 'label' => 'Transfer from CASH <b>TO</b> GL Account', 'type' => 'gl_accounts_list' );
-		$this->config_values[] = array( 'pref_name' => 'square_bank', 'label' => 'Square BANK Account', 'type' => 'bank_accounts_list' );
-		$this->config_values[] = array( 'pref_name' => 'xfer_to_bank', 'label' => 'Transfer from Square <b>TO</b> BANK Account', 'type' => 'bank_accounts_list' );
-		$this->config_values[] = array( 'pref_name' => 'cash_bank', 'label' => 'CASH BANK Account', 'type' => 'bank_accounts_list' );
-		$this->config_values[] = array( 'pref_name' => 'useCardAsBranch', 'label' => 'Should we use the Card as branch when customer unknown?', 'type' => 'yesno_list' );
 		$this->config_values[] = array( 'pref_name' => 'days_before', 'label' => 'When matching sales orders how many days before to look', 'type' => 'integer' );
 		$this->config_values[] = array( 'pref_name' => 'days_after', 'label' => 'When matching sales orders how many days after to look', 'type' => 'integer' );
 		$this->config_values[] = array( 'pref_name' => 'rounding_amount', 'label' => 'Amount for rounding when searching matching transactions', 'type' => 'integer' );
 		$this->config_values[] = array( 'pref_name' => 'default_location', 'label' => 'Default location for sales to be recorded against', 'type' => 'locations_list' );
 		$this->config_values[] = array( 'pref_name' => 'default_dimension1', 'label' => 'Default dimension 1', 'type' => 'dimensions_list' );
 		$this->config_values[] = array( 'pref_name' => 'default_dimension2', 'label' => 'Default dimension 2', 'type' => 'dimensions_list' );
-		$this->config_values[] = array( 'pref_name' => 'default_pricebook', 'label' => 'Default Price Book for Square sales', 'type' => '' );
-		$this->config_values[] = array( 'pref_name' => 'default_pay_card', 'label' => 'Default Payment Method for Square Card sales', 'type' => '' );
-		$this->config_values[] = array( 'pref_name' => 'default_pay_cash', 'label' => 'Default Payment Method for Square CASH sales', 'type' => '' );
-		$this->config_values[] = array( 'pref_name' => 'allowSkuChange', 'label' => 'Allow editing of Square SKUs for a transaction outside of Custom Amount items?', 'type' => 'yesno_list' );
 		$this->dolabels = 0;
 		
 		//The forms/actions for this module
@@ -101,7 +81,7 @@ class ksf_import_square extends generic_fa_interface
 		$this->tabs[] = array( 'title' => 'Usage Instructions', 'action' => 'usage', 'form' => 'usage_form', 'hidden' => FALSE );
 		$this->tabs[] = array( 'title' => 'Install Module', 'action' => 'create', 'form' => 'install', 'hidden' => TRUE );
 		/** Mantis 2373 Load (CSV) screen **/
-		$this->tabs[] = array( 'title' => 'Import Square CSV', 'action' => 'create', 'form' => 'install', 'hidden' => TRUE );
+		$this->tabs[] = array( 'title' => 'Import CSV', 'action' => 'create', 'form' => 'install', 'hidden' => TRUE );
 		$this->tabs[] = array( 'title' => 'Display Transactions', 'action' => 'create', 'form' => 'install', 'hidden' => TRUE );
 		$this->tabs[] = array( 'title' => 'Process Transactions', 'action' => 'create', 'form' => 'install', 'hidden' => TRUE );
 		//We could be looking for plugins here, adding menu's to the items.
@@ -614,7 +594,7 @@ class ksf_import_square extends generic_fa_interface
 				$amount = str_replace( ',', '', $myrow['card']);
 				if( $amount > 0 )
 				{
-					$account = $this->square_gl;
+						$account = $this->sourceConfig ? $this->sourceConfig->getGlAccount() : 0;
 					//var_dump( "Card: " . $amount );
 				}
 				else if( isset( $myrow['cash'] ) )
@@ -622,7 +602,7 @@ class ksf_import_square extends generic_fa_interface
 					$amount = str_replace( ',', '', $myrow['cash']);
 					if( $amount > 0 )
 					{
-						$account = $this->cash_gl;
+						$account = $this->sourceConfig ? $this->sourceConfig->getCashGl() : 0;
 						//var_dump( "Cash: " . $amount );
 					}
 				}
@@ -757,22 +737,22 @@ class ksf_import_square extends generic_fa_interface
 			try
 			{
 				$bttrf->set( "trans_type", ST_BANKTRANSFER );
-				$bttrf->set( "ToBankAccount", $this->xfer_to_bank );
-				$bttrf->set( "FromBankAccount", $this->square_bank );
+			$bttrf->set( "ToBankAccount", $this->sourceConfig ? $this->sourceConfig->getXferToBank() : 0 );
+			$bttrf->set( "FromBankAccount", $this->sourceConfig ? $this->sourceConfig->getBankAccount() : 0 );
 				if( is_callable( 'gmp_abs' ) )
 					$bttrf->set( "amount", gmp_abs( $trz['net_total'] ) );	//gmp_abs accepts strings
 				else
 					$bttrf->set( "amount", str_replace( ',', '', $trz['net_total'] ) );
 				$bttrf->set( "trans_date", $trz['Date'] );
 				$bttrf->set( "charge", abs( $trz['fees'] ) );	//It's conceivable fees could be 1k+ so this would fail....
-				$bttrf->set( "memo_", "Square Deposit::" . $trz['deposit_id'] . ":: for CARD amount :" . $trz['card'] . ": and fees of :" . $trz['fees'] . ": for deposit of :" . $trz['net_total'] . ":" );
+				$bttrf->set( "memo_", ucfirst($this->sourceConfig ? $this->sourceConfig->getSource() : 'import') . " Deposit::" . $trz['deposit_id'] . ":: for CARD amount :" . $trz['card'] . ": and fees of :" . $trz['fees'] . ": for deposit of :" . $trz['net_total'] . ":" );
 				//$bttrf->set( "target_amount", $trz['net_total'] );	//Target Amount is for doing currency conversions!
 				$bttrf->getNextRef();
 			}
 			catch( Exception $e )
 			{
-				//display_notification( __FILE__ . "::" . __LINE__ . ":" . $e->getMessage() );
-				break;
+				display_error( __FILE__ . "::" . __LINE__ . ":" . $e->getMessage() );
+				return;
 			}
 			begin_transaction();
 			$bttrf->add_bank_transfer();
@@ -959,20 +939,20 @@ class ksf_import_square extends generic_fa_interface
 		$cust_ref = $tr_da['customer_reference_id'];
 		$tr_date = $tr_da['Date'];
 		$cheader = array( 'Customer_id', 'customer_name', 'customer_reference_id', 'PAN_suffix' );
-		echo "<H2>Square Transaction Customer Details</h2>";
+		echo "<H2>Transaction Customer Details</h2>";
 		$this->display_multirow_table( $trans_data_arr, $cheader );
 
 		$theader = array( 'Date', 'gross_sales', 'discounts', 'net_sales', 'tax', 'total_collected', 'card', 'cash', 'net_total' );
 		if( $tr_da['card'] <> 0 )
 		{
 			$amount = $tr_da['card'];
-			$account = $this->square_gl;
+			$account = $this->sourceConfig ? $this->sourceConfig->getGlAccount() : 0;
 		}
 		else
 		if( $tr_da['cash'] <> 0 )
 		{
 			$amount = $tr_da['cash'];
-			$account = $this->cash_gl;
+			$account = $this->sourceConfig ? $this->sourceConfig->getCashGl() : 0;
 		}
 		echo "<H2>Transaction Details</h2>";
 		$this->display_multirow_table( $trans_data_arr, $theader );
@@ -998,7 +978,7 @@ class ksf_import_square extends generic_fa_interface
 				//Look for matching customer in EXTERNAL
 				require_once( '../ksf_modules_common/class.ksf_import_external_customers_model.php' );
 				$ec = new ksf_import_external_customers_model();
-				$fa_cust_data = $ec->searchCustomersByName( $cust_name, "SQUARE" );
+				$fa_cust_data = $ec->searchCustomersByName( $cust_name, $this->sourceConfig ? $this->sourceConfig->getSource() : 'unknown' );
 				if( isset( $fa_cust_data['fa_debtor_no'] ) )
 				{
 					$fa_debtor_no = $fa_cust_data['fa_debtor_no'];
@@ -1163,7 +1143,7 @@ class ksf_import_square extends generic_fa_interface
 //TODO:
 //	If the SKU is already matched to an invoice, we need to either disallow the change,
 //	Or we would need to unmatch the invoice.
-			if( $this->allowSkuChange )
+			if( $this->sourceConfig && $this->sourceConfig->isAllowSkuChange() )
 			{
 					$row['Item'] = "<a target=_blank href='" . $_SERVER['SCRIPT_NAME'] . "?action=edit_item_sku&sales_item_id=" . $sales_item_id . "&stock_id=" . $row['stock_id'] . "'>Edit SKU for " . $row['Item'] . "</a>";
 			}
@@ -1289,7 +1269,7 @@ class ksf_import_square extends generic_fa_interface
                 } while( ! is_new_reference( $cart->reference, $trans_type ) );
 
 		//$cart->Comments =  $_POST['Comments'];
-		$cart->Comments .=  "Square transaction " . $transaction_id . " on " .  $items_arr[0]['Date'];
+		$cart->Comments .=  "Import transaction " . $transaction_id . " on " .  $items_arr[0]['Date'];
 		if( strlen( $transaction_data_arr['customer_name'] ) > 0 )
 		{
 			$cart->Comments .=  " by customer " . $transaction_data_arr['customer_name'];
@@ -1473,7 +1453,7 @@ class ksf_import_square extends generic_fa_interface
 			require_once( 'class.ksf_import_external_customers_model.php' );
 			$ec = new ksf_import_external_customers_model();
 
-				$ec->set('external_customer_type', "SQUARE") ;
+				$ec->set('external_customer_type', $this->sourceConfig ? $this->sourceConfig->getSource() : 'unknown') ;
 				$ec->set('external_customer_id', $_GET['Customer_id'] );
 				$ec->set('external_customer_name', $_GET['customer_name']);
 				$ec->set('external_customer_reference', $_GET['customer_reference_id']  );
@@ -1664,9 +1644,9 @@ class ksf_import_square extends generic_fa_interface
 	function usage_form()
 	{
 		echo "<h1>How to Use this Module</h1>";
-		echo "<p>This module allows you to import Square Up transactions into Front Accounting.</p>";
-		echo "<p>Once the Square data is imported, you can then match the Square transactions against transactions you have already entered into Front Accounting.</p>";
-		echo "<h2>Import Square Data</h2></p>";
+		echo "<p>This module allows you to import transactions from external sources into Front Accounting.</p>";
+		echo "<p>Once the data is imported, you can then match the imported transactions against transactions you have already entered into Front Accounting.</p>";
+		echo "<h2>Import Data</h2></p>";
 		echo "<p>You need to import both the Transactions CSV as well as the Items CSV.</p>";
 		echo "<p>The transaction CSV gives you the associated data between customers, the transaction, their payment, and the associated bank deposit.  These are used to match or create both Customer Payments and Bank Deposits.</p>";
 		echo "<p>The Items CSV gives you the details for the transaction.  It lists how many of each sku, charges, taxes, fees, etc.  These are used to match Sales Orders, Deliveries, and Invoices.</p>";
@@ -1679,7 +1659,7 @@ class ksf_import_square extends generic_fa_interface
 		echo "<h3>Process Transactions</h3>";
 		echo "<h4>Transactions Items</h4>";
 		echo "<p>The Transaction items screen displays details about the customer related to the transaction, basic details on the transaction, as well as potential Front Accounting invoices.</p>";
-		echo "<p>The screen also lists all of the line items as sent by Square.  These will be matched against the line items of the possible matching Invoices</p>";
+		echo "<p>The screen also lists all of the line items as sent by the source.  These will be matched against the line items of the possible matching Invoices</p>";
 		echo "<p>You can indicate the matching invoice on this screen.</p><p><b>NOTE</b> Here is where you will see duplicated line items if you import a transaction file (or overlapping date ranges) multiple times.</p>";
 		echo "<h3>Process Payments</h3>";
 		echo "<h3>Process Deposits</h3>";
@@ -1688,19 +1668,75 @@ class ksf_import_square extends generic_fa_interface
 		echo "<ul>";
 		echo "<li>Environment (unused) - designed for testing but not coded.</li>";
 		echo "<li>Debug Level.  How much detail for troubleshooting.</li>";
-		echo "<li>Default Customer - who to use for creating invoices for when Square doesn't tell us who the customer was.  I have an <i>0Cash Customer</i> for using at Farmers Markets, Highland Games, etc when we don't know who is purchasing</li>";
-		echo "<li>Square GL account - which account for logging payments into and deposits out of.</li>";
-		echo "<li>Transfer To account - which GL do we transfer deposit amounts to.</li>";
-		echo "<li>Cash GL account - for when the customer paid by cash and not Square.</li>";
-		echo "<li>Square Bank Account - for when we are logging payments into the Square bank account.</li>";
-		echo "<li>Transfer To Bank Account - which bank account Bankd Deposits go into.</li>";
-		echo "<li>Cash Bank Account - for when we log the payment for an invoice that was paid in Cash.</li>";
-		echo "<li>Use Card for Branch - when using the Default Customer, should we create a branch associated to the bank card.  This way we can track purchases for customers by card (branch)</li>";
-		echo "<li>How many days to look before the Square date for matching Sales Invoices we already entered.</li>";
-		echo "<li>How many days to look after the Square date for matching Sales Invoices we already entered.</li>";
+		echo "<li>Default Customer - who to use for creating invoices when the source doesn't tell us who the customer was.  I have an <i>0Cash Customer</i> for using at Farmers Markets, Highland Games, etc when we don't know who is purchasing</li>";
+		echo "<li>How many days to look before the import date for matching Sales Invoices we already entered.</li>";
+		echo "<li>How many days to look after the import date for matching Sales Invoices we already entered.</li>";
+		echo "<li>Rounding Amount - tolerance for amount matching when searching for matching transactions.</li>";
+		echo "<li>Default Location - which inventory location transactions are sold out of.</li>";
+		echo "<li>Default Dimension 1/2 - which FA dimensions to assign to imported transactions.</li>";
 		echo "</ul>";
 		
 	}
+	/**
+	 * Detect GL account mismatch between staged transaction and matched FA transaction.
+	 *
+	 * When a staged transaction is matched to an existing FA transaction, this
+	 * method compares the GL account configured in the source module's config
+	 * against the GL account actually used by the FA transaction. A mismatch
+	 * indicates the source module and the FA transaction use different payment
+	 * destination GL accounts.
+	 *
+	 * @param array $stagedRow The staged transaction row
+	 * @param array $matchedFaTrans The matched FA transaction from findMatchingTransactions
+	 * @return array ['mismatch' => bool, 'source_gl' => int, 'fa_gl' => int, 'detail' => string]
+	 */
+	function detectGlMismatch($stagedRow, $matchedFaTrans)
+	{
+		$result = ['mismatch' => false, 'source_gl' => 0, 'fa_gl' => 0, 'detail' => ''];
+
+		if (!$this->sourceConfig) {
+			return $result;
+		}
+
+		// Determine source GL from payment type
+		$sourceGl = 0;
+		if (isset($stagedRow['card']) && (float)str_replace(',', '', $stagedRow['card']) > 0) {
+			$sourceGl = $this->sourceConfig->getGlAccount();
+		} elseif (isset($stagedRow['cash']) && (float)str_replace(',', '', $stagedRow['cash']) > 0) {
+			$sourceGl = $this->sourceConfig->getCashGl();
+		}
+
+		if ($sourceGl <= 0) {
+			return $result;
+		}
+
+		// Get FA transaction's GL account from the matched record
+		$faGl = 0;
+		if (isset($matchedFaTrans['account_code'])) {
+			$faGl = (int)$matchedFaTrans['account_code'];
+		} elseif (isset($matchedFaTrans['account'])) {
+			$faGl = (int)$matchedFaTrans['account'];
+		}
+
+		if ($faGl <= 0) {
+			return $result;
+		}
+
+		$result['source_gl'] = $sourceGl;
+		$result['fa_gl'] = $faGl;
+
+		if ($sourceGl !== $faGl) {
+			$result['mismatch'] = true;
+			$result['detail'] = sprintf(
+				_('GL Mismatch: Source configured GL %d, but FA transaction uses GL %d'),
+				$sourceGl,
+				$faGl
+			);
+		}
+
+		return $result;
+	}
+
 	/**//***************************
 	*
 	*
@@ -1777,7 +1813,7 @@ class ksf_import_square extends generic_fa_interface
 			{
 				$URL .= $sq_row['customer_reference_id'];
 			}
-			$URL .= "'>Match Square Customer " . $sq_row['customer_name'] . " to FA Customer " . $name . " </a>";
+			$URL .= "'>Match Customer " . $sq_row['customer_name'] . " to FA Customer " . $name . " </a>";
 			return $URL;
                         //return "sales/manage/customers.php?debtor_no=" . $debtor_no . "&popup=1";
                 }
@@ -1855,7 +1891,7 @@ class ksf_import_square extends generic_fa_interface
 		//require_once( '../ksf_modules_common/class.ksf_import_external_customers.php' );
 		$cust = new ksf_import_external_customers_model();
 		$cust->set( "external_customer_name", $customer_name );
-		$cust->set( "external_customer_type", "SQUARE" );	
+		$cust->set( "external_customer_type", $this->sourceConfig ? $this->sourceConfig->getSource() : 'unknown' );	
 		$count = 0;
 		try
 		{	

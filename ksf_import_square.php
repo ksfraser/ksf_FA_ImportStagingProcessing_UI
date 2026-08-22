@@ -21,6 +21,6 @@ require_once('ksf_import_square.inc.php');
 $coastc = new ksf_import_square(KSF_IMPORT_SQUARE_PREFS);
 $found = $coastc->is_installed();
 $coastc->set_var('found', $found);
-$coastc->set_var('help_context', "Import Square");
+$coastc->set_var('help_context', "Import Staging");
 $coastc->set_var('redirect_to', "ksf_import_square.php");
 $coastc->run();

@@ -8,12 +8,17 @@
 
 ## 1. Business Context
 
-FrontAccounting (FA) needs to import Square point-of-sale transactions for accounting purposes. Currently, Square transaction data exists in two forms:
+FrontAccounting (FA) needs to import financial transactions from multiple
+sources — Square POS, WooCommerce, and future sources — into a unified
+staging pipeline before posting to the ledger. The module provides a
+**source-agnostic staging backend** with CSV upload, transaction staging,
+customer/counterparty matching, and processing into FA sales invoices,
+payments, and bank transfers.
 
-1. **CSV exports** from the Square Dashboard (Summary and Items reports)
-2. **Square API** providing programmatic access to Orders, Payments, and Refunds
-
-The module stages imported data into intermediate tables before processing into FA's ledger, ensuring idempotent imports, duplicate detection, and proper customer/vendor matching.
+Importing modules (ksf_FA_Square, ksf_FA_Woocommerce) own their
+source-specific configuration (GL accounts, bank accounts, API tokens)
+and delegate staging/processing to this module via the
+`hook_invoke` interface.
 
 ---
 
@@ -165,6 +170,98 @@ The module stages imported data into intermediate tables before processing into 
 
 ---
 
+### FR-ISU-009: Generic Staging Support (Multi-Source)
+
+**Description**: The module SHALL serve as a generic staging backend for
+multiple importing modules (Square, WooCommerce, future sources) via the
+hook_invoke interface.
+
+| ID | Requirement | Priority |
+|----|------------|----------|
+| FR-ISU-009-001 | Accept staging requests via `hook_invoke('ksf_FA_ImportStagingProcessing_UI', 'respondToCapabilityRequest', ...)` | Must |
+| FR-ISU-009-002 | Support `staging:stageOrder` request from external modules | Must |
+| FR-ISU-009-003 | Support `staging:stageCustomer` request from external modules | Must |
+| FR-ISU-009-004 | Accept source identifier (e.g., 'square', 'woocommerce') in staging requests | Must |
+| FR-ISU-009-005 | Delegate to ISU staging tables regardless of source module | Must |
+| FR-ISU-009-006 | Maintain backward compatibility with direct CSV import | Must |
+| FR-ISU-009-007 | Provide fallback local staging when ISU hook unavailable | Should |
+
+**Source Files**: `hooks.php` (hook_invoke_all), `class.ksf_import_square.php`
+
+---
+
+### FR-ISU-010: Config Delegation (Source-Specific Config)
+
+**Description**: Importing modules provide source-specific configuration
+values (GL accounts, bank accounts, payment methods) via the
+`integration_module` delegation key. ISU does NOT own source-specific
+config fields.
+
+| ID | Requirement | Priority |
+|----|------------|----------|
+| FR-ISU-010-001 | ISU config table SHALL NOT contain source-specific fields (GL accounts, bank accounts, API tokens) | Must |
+| FR-ISU-010-002 | Importing modules SHALL register as the `integration_module` for their config rows | Must |
+| FR-ISU-010-003 | ISU processing methods SHALL accept a `$sourceConfig` array with GL/bank/payment values | Must |
+| FR-ISU-010-004 | ISU SHALL fall back to generic defaults when source-specific config is not provided | Should |
+| FR-ISU-010-005 | ISU config SHALL retain only source-agnostic fields (matching window, defaults, rounding) | Must |
+
+**Source Files**: `class.ksf_import_square.php` (config_values), `hooks.php`
+
+---
+
+### FR-ISU-011: Source-Agnostic Transaction Processing
+
+**Description**: Process staged transactions from any source (Square, Woo,
+etc.) into FA ledger entries, using source-specific config provided by
+the calling module.
+
+| ID | Requirement | Priority |
+|----|------------|----------|
+| FR-ISU-011-001 | Create FA Sales Invoices from staged transactions regardless of source | Must |
+| FR-ISU-011-002 | Use GL account from `$sourceConfig['gl_account']` instead of hardcoded config | Must |
+| FR-ISU-011-003 | Use bank account from `$sourceConfig['bank_account']` for deposits | Must |
+| FR-ISU-011-004 | Support configurable payment methods per source (`$sourceConfig['pay_type']`) | Should |
+| FR-ISU-011-005 | Record source identifier on all FA transactions for traceability | Must |
+
+**Source Files**: `class.ksf_import_square.php` (process_transactions_form, add_deposit_form, add_payment_form)
+
+---
+
+### FR-ISU-012: GL Mismatch Detection
+
+**Description**: During the review/match phase, detect and flag GL account
+mismatches between staged transactions and existing FA transactions.
+
+| ID | Requirement | Priority |
+|----|------------|----------|
+| FR-ISU-012-001 | When a staged transaction is matched to an existing FA transaction, compare GL accounts | Must |
+| FR-ISU-012-002 | If the staged GL (from source config) differs from the FA GL (from `gl_trans`), flag as mismatch | Must |
+| FR-ISU-012-003 | Display a visual warning (icon/text) on mismatched match rows in the review UI | Must |
+| FR-ISU-012-004 | Use configurable matching window (`days_before`/`days_after`) for candidate discovery | Must |
+| FR-ISU-012-005 | Use configurable amount tolerance (`rounding_amount`) for candidate matching | Must |
+| FR-ISU-012-006 | Support three-way comparison: source A staged + source B staged + native FA transaction | Should |
+| FR-ISU-012-007 | Score match candidates by amount, date proximity, customer, and line items | Should |
+| FR-ISU-012-008 | GL mismatch SHALL NOT block processing — advisory only | Must |
+
+**Source Files**: `class.ksf_import_square.php` (findMatchingTransactions, displayMatchingPaymentsMatch)
+
+---
+
+### FR-ISU-013: Source Identification on Staged Transactions
+
+**Description**: All staged transactions SHALL carry a source identifier
+indicating which importing module created them.
+
+| ID | Requirement | Priority |
+|----|------------|----------|
+| FR-ISU-013-001 | Staging request SHALL include `source` parameter (e.g., 'square', 'woocommerce') | Must |
+| FR-ISU-013-002 | Source identifier stored in staging table for filtering and traceability | Must |
+| FR-ISU-013-003 | ISU review UI SHALL support filtering by source | Should |
+
+**Source Files**: `hooks.php`, `class.ksf_import_square_transactions.php`
+
+---
+
 ## 3. Non-Functional Requirements
 
 | ID | Requirement | Details |
@@ -181,6 +278,12 @@ The module stages imported data into intermediate tables before processing into 
 ---
 
 ## 4. Tables Reference
+
+> **Note**: These tables are source-agnostic. Staged transactions from
+> Square, WooCommerce, and future sources share the same tables, distinguished
+> by a source identifier column. Source-specific fields (GL accounts, bank
+> accounts) are provided by the importing module at processing time, not
+> stored in these tables.
 
 ### `0_ksf_import_square_transactions`
 
@@ -240,7 +343,14 @@ Payment-to-FA match records.
 | Term | Definition |
 |------|-----------|
 | Staging | Inserting imported data into intermediate tables before processing into FA ledger |
+| Source Module | An importing module (Square, WooCommerce, etc.) that provides data to ISU |
+| Config Delegation | Pattern where source modules provide GL/bank/payment config to ISU at processing time |
+| GL Mismatch | Advisory flag when staged transaction GL differs from matched FA transaction GL |
+| Three-Way Match | Comparison of staged source A + staged source B + native FA transaction |
+| Match Scoring | Weighted algorithm scoring candidates by amount, date, customer, line items |
 | Square | Third-party point-of-sale and payment processing platform |
-| Settlement | The process of a Square transaction being transferred to the merchant's bank account |
+| WooCommerce | WordPress e-commerce plugin providing REST API for products/orders/customers |
+| Settlement | The process of a transaction being transferred to the merchant's bank account |
 | Counterparty | The other party in a transaction (customer or vendor) |
 | PAN | Primary Account Number (card number suffix used for identification) |
+| Integration Module | The source module registered to provide config values to ISU via delegation |
